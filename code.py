@@ -53,26 +53,29 @@ def calc_entropy_loss(groups, total_n, init_entropy) :
     for group in groups.items() :
         temp_l = []
         #print(len(group[1]))
+        if(len(group[1])==0) :
+            continue
         for j in range(len(group[1])) :
             temp_l.append(int(group[1][j]["Deaths"]))
         final_entropy += (len(group[1])/total_n)*np.sqrt(np.var(np.array(temp_l)))
-    print(init_entropy-final_entropy)
+    #print(init_entropy-final_entropy)
     return (init_entropy-final_entropy)
     
 
 def create_split(dataset) :
-    b_index, b_value, b_score, b_groups = 999, 999, 999, None
+    b_index, b_value, b_score, b_groups = "nothing", 0, 0, None
     temp_l = []
     for j in range(dataset.shape[0]) :
         temp_l.append(int(dataset[j]["Deaths"]))
     init_entropy = np.sqrt(np.var(np.array(temp_l)))
-    print("Current Entropy : ", init_entropy)
+    #print("Current Entropy : ", init_entropy)
     for field in ["Country","Confirmed", "Recovered", "Date"] :
-        print("Entropy loss according to split ",field, " is :-")
+        #print("Entropy loss according to split ",field, " is :-")
         if(field=="Country") :
             groups = split(field, dataset, "all")
+            
             score = calc_entropy_loss(groups,dataset.shape[0], init_entropy)
-            if(score<b_score) :
+            if(score>b_score) :
                 b_score = score
                 b_value = "all"
                 b_index = "Country"
@@ -84,11 +87,55 @@ def create_split(dataset) :
         value_to_split = np.average(np.array(temp_l))
         groups = split(field, dataset, value_to_split)
         score = calc_entropy_loss(groups,dataset.shape[0], init_entropy)
-        if(score<b_score) :
+        #print("With value", value_to_split)
+        if(score>b_score) :
             b_score = score
             b_value = value_to_split
             b_index = field
             b_groups = groups
-    return b_score, b_value, b_index, b_groups
+    return {'score':b_score, 'value':b_value, 'index':b_index, 'groups':b_groups}
 
-first_split = create_split(dataset)
+def to_leaf(val) :
+    return {'score':-1, 'value':val, 'index':"Leaf", 'groups':"None"}
+
+def rec_split(node, max_depth, depth) :
+    node['new_groups'] = {}
+    if (node['index']=='nothing') :
+        return
+    if depth>=max_depth :
+        for group in node['groups'].items() :
+            temp_l = []
+            #print(len(group[1]))
+            for j in range(len(group[1])) :
+                temp_l.append(int(group[1][j]["Deaths"]))
+            node['new_groups'][group[0]] = []
+            node['new_groups'][group[0]] = to_leaf(np.average(np.array(temp_l)))
+        del(node['groups'])
+        return
+    
+    for group in node['groups'].items() :
+        node['new_groups'][group[0]] = []
+        node['new_groups'][group[0]] = create_split(np.array(group[1]))
+        
+    del(node['groups'])
+    for group in node['new_groups'].items() :
+        rec_split(group[1], max_depth, depth+1)
+
+def predict(node, row):
+    if node['index']=="Leaf" :
+        return node['value']
+    if node['index'] == 'Country' :
+        return predict(node['new_groups'][row['Country']], row)
+    if float(row[node['index']]) < node['value']:
+        return predict(node['new_groups']['left'], row)
+    else:
+        return predict(node['new_groups']['right'], row)
+
+root_node = create_split(dataset)
+rec_split(root_node,5,0)
+test_row = {}
+test_row['Country'] = 'India'
+test_row['Date'] = 70
+test_row['Confirmed'] = 7600
+test_row['Recovered'] = 774
+print("Prediction :",predict(root_node,test_row))
