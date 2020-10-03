@@ -4,6 +4,7 @@ import numpy as np
 dataset = []
 dataset_split_countries = []
 countries = []
+min_threshold = 5
 
 # Preprocessing
 with open('AggregatedCountriesCOVIDStats.csv', mode='r') as csv_file:
@@ -63,7 +64,7 @@ def calc_entropy_loss(groups, total_n, init_entropy) :
     
 
 def create_split(dataset) :
-    b_index, b_value, b_score, b_groups = "nothing", 0, 0, None
+    b_index, b_value, b_score, b_groups = "nothing", 0, -1, None
     temp_l = []
     for j in range(dataset.shape[0]) :
         temp_l.append(int(dataset[j]["Deaths"]))
@@ -98,11 +99,11 @@ def create_split(dataset) :
 def to_leaf(val) :
     return {'score':-1, 'value':val, 'index':"Leaf", 'groups':"None"}
 
-def rec_split(node, max_depth, depth) :
+def rec_split(node, max_depth, depth) : # To recursively form the decision tree with max height as max_depth
     node['new_groups'] = {}
     if (node['index']=='nothing') :
         return
-    if depth>=max_depth :
+    if (depth>=max_depth and max_depth!=-1) or node['score']<=min_threshold:
         for group in node['groups'].items() :
             temp_l = []
             #print(len(group[1]))
@@ -131,11 +132,19 @@ def predict(node, row):
     else:
         return predict(node['new_groups']['right'], row)
 
-root_node = create_split(dataset)
-rec_split(root_node,5,0)
-test_row = {}
-test_row['Country'] = 'India'
-test_row['Date'] = 70
-test_row['Confirmed'] = 7600
-test_row['Recovered'] = 774
-print("Prediction :",predict(root_node,test_row))
+def calculate_RMSE_error(root_node, test_dataset): # To calculate RMSE error for dataset test_dataset and tree with root node as root_node
+    val = 0
+    size = 0
+    for data in test_dataset:
+        size = size + 1
+        val += (float(data['Deaths']) - float(predict(root_node, data)))*(float(data['Deaths']) - float(predict(root_node, data)))
+    return np.sqrt(val/size)
+
+# Example : Create decision tree using full dataset
+root_node = create_split(dataset) # Calculate the root node by first splitting the data
+rec_split(root_node, 9, 0) # Recursively split further taking max height as input, max_height = -1 if full decision tree is to be built
+# NOTE : Adjust the threshold for leaf node from above, keep it 0 to fully construct the tree to the optimal limit
+print("Training error :",calculate_error(root_node,dataset))
+# Part 1 : Create 10 random 80 : 20 train and test dataset splits and evaluate their average loss
+# Part 2 : Vary max height and find the value which gives better average value as per part 1
+# Part 3 : Prune the best decision tree observed from part 2 further
